@@ -1,0 +1,526 @@
+DROP DATABASE IF EXISTS restaurant;
+CREATE DATABASE restaurant;
+USE restaurant;
+
+CREATE TABLE products_type(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(55) NOT NULL
+);
+
+CREATE TABLE allergens(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(55) NOT NULL,
+    `description` TEXT NULL DEFAULT NULL
+);
+
+CREATE TABLE products(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(55) NOT NULL,
+    `description` TEXT NULL DEFAULT NULL,
+    origin VARCHAR(60) NULL DEFAULT NULL,
+    UNIQUE(`name`, origin),
+    product_type_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (product_type_id) REFERENCES products_type(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    allergen_id INT NULL DEFAULT NULL,
+    CONSTRAINT FOREIGN KEY (allergen_id) REFERENCES allergens(id) ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE items_type(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(55) NOT NULL
+);
+
+CREATE TABLE items(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(70) NOT NULL UNIQUE,
+    quantity INT NOT NULL,
+    unit ENUM('g', 'ml') NOT NULL,
+    prize DOUBLE NOT NULL CONSTRAINT PositivePrice CHECK (prize > 0),
+    p_unit VARCHAR(3) DEFAULT 'BGN' NOT NULL,
+    item_type_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (item_type_id) REFERENCES items_type(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE waiters(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(255) NOT NULL,
+    egn CHAR(10) NOT NULL UNIQUE CONSTRAINT EGN CHECK(CHAR_LENGTH(egn) = 10),
+    phone VARCHAR(20) NULL DEFAULT NULL,
+    address VARCHAR(255) NULL DEFAULT NULL,
+    date_of_hiring DATE NOT NULL,
+    hourly_payment DOUBLE NOT NULL
+);
+
+CREATE TABLE waiters_payment(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+	payment_date DATE NOT NULL,
+    hours_worked TINYINT NOT NULL CONSTRAINT PositiveHoursWorked CHECK(hours_worked > 0),
+    daily_payment DOUBLE NOT NULL CONSTRAINT PositiveDailyPayment CHECK(daily_payment > 0),
+    unit VARCHAR(3) NOT NULL DEFAULT 'BGN',
+    waiter_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (waiter_id) REFERENCES waiters(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY (payment_date , waiter_id)
+);
+
+CREATE TABLE `tables`(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    seats TINYINT NOT NULL,
+    waiter_id INT NULL DEFAULT NULL,
+    CONSTRAINT FOREIGN KEY (waiter_id) REFERENCES waiters(id) ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE orders(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    date_time DATETIME NOT NULL,
+    total DOUBLE NOT NULL DEFAULT 0,
+    unit VARCHAR(3) DEFAULT 'BGN' NOT NULL,
+    table_id INT NOT NULL,
+	CONSTRAINT FOREIGN KEY (table_id) REFERENCES `tables`(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    waiter_id INT NOT NULL,
+	CONSTRAINT FOREIGN KEY (waiter_id) REFERENCES waiters(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+	
+CREATE TABLE items_products(
+	item_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    product_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE(item_id, product_id)
+);
+
+CREATE TABLE orders_items(
+	order_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    item_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    quantity_of_item TINYINT NOT NULL DEFAULT 1,
+    UNIQUE(order_id, item_id)
+);
+
+CREATE TABLE `events`(
+	id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    event_type ENUM("Рожден ден", "Бал", "Юбилей", "Вечеря", "Обяд", "Закуска", "Сватба", "Друго събитие") NOT NULL UNIQUE,
+    duration_hours INT NOT NULL
+);
+
+CREATE TABLE reservations(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    reservation_dateTime DATETIME NOT NULL CONSTRAINT CHECK (TIME(reservation_dateTime) > '08:00:00' OR TIME(reservation_dateTime) < '23:00:00'),
+    client_first_name VARCHAR(60) NOT NULL,
+    client_second_name VARCHAR(60) NOT NULL,
+    client_phone VARCHAR(15) NOT NULL,
+    number_of_people TINYINT NOT NULL,
+    event_type_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (event_type_id) REFERENCES `events`(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE reservation_table(
+	reservation_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE ON UPDATE CASCADE,
+	table_id INT NOT NULL,
+    CONSTRAINT FOREIGN KEY (table_id) REFERENCES `tables`(id) ON DELETE CASCADE ON UPDATE CASCADE,
+	UNIQUE KEY (reservation_id, table_id)
+);
+
+//
+-- INSERT INTO products_type(`name`) VALUES 
+-- ('Зеленчуци'),
+-- ('Плодове'),
+-- ('Месо'),
+-- ('Морска храна'),
+-- ('Яйца'),
+-- ('Млечни продукти'),
+-- ('Подправки'),
+-- ('Ядки'),
+-- ('Зърнени култури');
+
+-- INSERT INTO allergens (`name`, `description`) VALUES 
+-- ('Глутен', 'Протеин, съдържащ се в пшеницата, ечемика и ръжта'),
+-- ('Соя', 'Бобово растение, често използвано като съставка в много преработени храни'),
+-- ('Фъстъци', 'Вид ядка, която може да предизвика тежки алергични реакции при някои хора'),
+-- ('Дървесни ядки', 'Различни видове ядки, като бадеми, кашу и орехи'),
+-- ('Лактоза', 'Често срещана съставка в много млечни продукти, включително сирене, кисело мляко и сладолед'),
+-- ('Яйца', 'Често срещана съставка в много печени изделия, включително торти и бисквити'),
+-- ('Морски дарове', 'Различни видове морски дарове, като скариди, раци и омари'),
+-- ('Риба', 'Често срещана съставка в много видове кухня'),
+-- ('Сусам', 'Семе, което обикновено се използва като съставка в много видове хляб и сладкиши'),
+-- ('Пшеница', 'Универсална съставка, която се използва в голямо разнообразие от храни, включително хляб, макаронени изделия, зърнени храни и печени изделия'),
+-- ('Сулфити', 'Вид консервант, който често се използва в много видове преработени храни');
+
+-- INSERT INTO products (`name`, `description`, origin, product_type_id, allergen_id) VALUES 
+-- ('Моркови', 'Кореноплоден зеленчук, който често се консумира суров или сготвен', 'Европа', 1, NULL),
+-- ('Домати', 'Плод, който често се използва като зеленчук в кулинарията', 'Европа', 1, NULL),
+-- ('Чушки', 'Група зеленчуци с разнообразни цветове и вкусове', 'Европа', 1, NULL),
+-- ('Лук', 'Луковичен зеленчук, който често се използва като ароматизатор в кулинарията', 'Европа', 1, NULL),
+-- ('Картофи', 'Кореноплоден зеленчук с нишесте, който често се вари, пече или пържи', 'Европа', 1, NULL),
+-- ('Краставици', 'Вид тиква, която често се консумира сурова или маринована', 'Азия', 1, NULL),
+-- ('Маруля', 'Зелен листен зеленчук, който често се консумира суров в салати', 'Азия', 1, NULL),
+-- ('Ябълки', 'Сладък плод с хрупкава текстура', 'Северна Америка', 2, NULL),
+-- ('Банани', 'Мек и сладък плод с характерна форма', 'Южна Америка', 2, NULL),
+-- ('Портокали', 'Цитрусов плод със сочна месеста част', 'Европа', 2, NULL),
+-- ('Ягоди', 'Сладък и сочен плод с високо съдържание на витамин С и антиоксиданти', 'Северна Америка', 2, NULL),
+-- ('Грозде', 'Сладък и сочен плод, който се предлага в много различни цветове и разновидности', 'Южна Америка', 2, NULL),
+-- ('Говеждо месо', 'Вид месо, което се добива от едър рогат добитък', 'Северна Америка', 3, NULL),
+-- ('Свинско месо', 'Вид месо, което се добива от прасета', 'Европа', 3, NULL),
+-- ('Пишешко месо', 'Вид домашни птици, които се консумират често в много части на света', 'Северна Америка', 3, NULL),
+-- ('Агнешко месо', 'Вид месо, което се добива от овце', 'Азия', 3, NULL),
+-- ('Патешко месо', 'Вид птиче месо, което се консумира често в азиатската кухня', 'Азия', 3, NULL),
+-- ('Лаврак', 'Популярна морска риба с бяло месо и нежен вкус', 'Африка', 4, 8),
+-- ('Тон', 'Голяма морска риба с тъмно червено месо и интензивен вкус', 'Африка', 4, 8),
+-- ('Сьомга', 'Маслена морска риба с розово месо и богат вкус', 'Северна Америка', 4, 8),
+-- ('Скариди', 'Деликатесна морска храни, с богат вкус и текстура', 'Азия', 4, 8),
+-- ('Акула', 'Бяло месо с твърда текстура, често използвано за приготвяне на суши и сашими', 'Северна Америка', 4, 8),
+-- ('Баракуда', 'Маслена риба със силна ароматна нотка и мека текстура', 'Европа', 4, 8),
+-- ('Кисело мляко', 'Млечен продукт, който се получава чрез заквасяване на обикновено мляко с млечнокисели бактерии', 'Европа', 6, 5),
+-- ('Прясно мляко', 'Непастеризирано, незагрявано мляко, получено от дойни животни, богато е на калций', 'Европа', 6, 5),
+-- ('Сметана', 'Млечен продукт, който се получава от отделянето на маслени капки от обикновено мляко', 'Европа', 6, 5),
+-- ('Сирене', 'Млечен продукт, който се получава чрез обработката на млякото с помощта на млечнокисели бактерии и ензими', 'Европа', 6, 5),
+-- ('Масло', 'Млечен продукт, който се получава чрез отделяне на маслени капки от обикновено мляко или сметана', 'Европа', 6, 5),
+-- ('Кашкавал', 'Млечен продукт, който се получава чрез обработката на млякото с помощта на ензими', 'Европа', 6, 5),
+-- ('Кокоши яйца', 'Яйца, получен от женските птици на определени видове кокошки', 'Южна Америка', 5, 6),
+-- ('Пътпъдъчи яйца', 'Яйца, получени от женските птици от определени видове пъдпъдъци', 'Южна Америка', 5, 6),
+-- ('Черен пипер', 'Подправка, която се получава от сушени плодове на растението Piper nigrum', 'Африка', 7, NULL),
+-- ('Червен пипер', 'Подправка, която се получава от сушени чушки на различни видове пипер', 'Африка', 7, NULL),
+-- ('Сол', 'Минерална съставка, която се използва за подобряване на вкуса на храната и като консервант', 'Африка', 7, NULL),
+-- ('Чесън', 'Растение от семейство луковици, което се използва като подправка в готварството за своя характерен вкус и аромат', 'Азия', 7, NULL),
+-- ('Захар', 'Вещество, което се използва за подслаждане на храните и напитките', 'Азия', 7, NULL),
+-- ('Магданоз', 'Билка, която се използва като подправка в готварството за своя свеж вкус и аромат', 'Европа', 7, NULL),
+-- ('Кимион', 'Подправка, която се получава от семената на растението Cuminum cyminum и има характерен аромат и вкус', 'Европа', 7, NULL),
+-- ('Лешници', 'Ядки, които са богат източник на протеини, мазнини, витамини и минерали', 'Азия', 8, 4),
+-- ('Бадеми', 'Ядки, които са богат източник на протеини, мазнини, витамини и минерали', 'Северна Америка', 8, 4),
+-- ('Орехи', 'Ядки, които са богат източник на протеини, мазнини, витамини и минерали', 'Азия', 8, 4),
+-- ('Фъстъци', 'Ядки, които са богат източник на протеини, мазнини, витамини и минерали', 'Африка', 8, 3),
+-- ('Кашу', 'Ядка, която се използва в готварството и сладкишите, за да се придаде вкус и текстура на ястията', 'Южна Америка', 8, 4),
+-- ('Ориз', 'Хранителна култура с бели или кафяви зърна, богат на въглехидрати', 'Азия', 9, NULL),
+-- ('Пшеница', 'Една от най-широко разпространените зърнени култури в света, използвана за производство на тестени изделия', 'Европа', 9, 1),
+-- ('Царевица', 'Зърнена култура, която се използва за производство на кукурузно брашно и други ястия', 'Азия', 9, 1),
+-- ('Овес', 'Зърнена култура, използвана за производство на овесени ядки, каша и други хранителни продукти', 'Азия', 9, 1);
+
+-- INSERT INTO items_type(`name`) VALUES
+-- ('Тестени изделия'),
+-- ('Предястия'),
+-- ('Основни ястия'),
+-- ('Десерти'),
+-- ('Алкохолни напитки'),
+-- ('Безалкохолни напитки');
+
+INSERT INTO items(`name`, quantity, unit, prize, item_type_id) VALUES
+('Филия хляб', 70, 'g',0.15, 1),
+('Питка със сирене', 110, 'g',1.50, 1),
+('Пърленка', 90, 'g',1.10, 1),
+('Шопска салата', 300, 'g',5.50, 2),
+('Гръцка салата', 350, 'g',7.00, 2),
+('Цезар салата', 250, 'g',6.00, 2),
+('Млечна салата', 100, 'g',2.50, 2),
+('Таратор', 150, 'g',2.00, 2),
+('Пълнена чушка със сирене', 150, 'g',3.00, 2),
+('Пататник', 200, 'g',4.50, 2),
+('Пилешки хапки', 150, 'g',7.00, 2),
+('Гювеч', 450, 'g',10.00, 3),
+('Мусака', 300, 'g',7.50, 3),
+('Кебапче', 80, 'g',1.20, 3),
+('Кюфте', 70, 'g',1.10, 3),
+('Печено агнешко с картофи', 450, 'g',15.50, 3),
+('Риба на скара', 300, 'g',15.00, 3),
+('Патешка магданозова чорба', 250, 'g',13.50, 3),
+('Кисело зеле със свинско месо', 350, 'g',11.50, 3),
+('Агнешко с яйца', 350, 'g',17.00, 3),
+('Печено свинско с картофи', 450, 'g',13.50, 3),
+('Спагети', 400, 'g',10.00, 3),
+('Сладолед', 85, 'ml',4.50, 4),
+('Крем карамел', 80, 'g',5.50, 4),
+('Чийзкейк', 100, 'g',7.00, 4),
+('Тирамису', 90, 'g',6.00, 4),
+('Наливна бира', 500, 'ml',2.00, 5),
+('Червено вино', 200, 'ml',5.00, 5),
+('Ракия', 100, 'ml',5.00, 5),
+('Уиски', 100, 'ml',8.00, 5),
+('Газирана вода', 500, 'ml',1.50, 6),
+('Чай', 110, 'ml',3.00, 6),
+('Кафе', 50, 'ml',2.50, 6),
+('Портокалов сок', 220, 'ml',2.00, 6),
+('Ябълков сок', 220, 'ml',2.00, 6),
+('Кока-кола', 330, 'ml',2.50, 6);
+
+INSERT INTO items_products VALUES
+(1, 48),
+(2, 48),
+(2, 27),(3, 48),(4, 6),(4, 2),(4, 3),(4, 27),(4, 32),(4, 34),(5, 2),(5, 6),
+(5, 3),(5, 4),(5, 34),(5, 49),(5, 32),(6, 7),(6, 1),(6, 27),(6, 30),(6, 49),
+(7, 6),(7, 49),(7, 24),(7, 34),(8, 6),(8, 49),(8, 24),(9, 3),(9, 27),(10, 5),
+(10, 4),(10, 35),(10, 30),(10, 48),(10, 34),(10, 32),(10, 49),(10, 37),(11, 15),(11, 48),
+(11, 30),(11, 28),(12, 1),(12,2),(12, 3),(12, 4),(12, 5),(12, 6),(12, 13),(12, 32),
+(12, 34),(13, 5),(13, 14),(13, 2),(13, 4),(13, 24),(13, 30),(14, 14),(14, 35),(14, 32),
+(14, 34),(15, 14),(15, 38),(15,32),(15, 34),(15, 37),(16, 5),(16, 16),(16, 32),(16, 37),
+(17, 18),(17, 32),(17, 37),(18, 37),(18, 17),(19, 14),(19, 50),(19, 32),(19, 37),
+(20, 16),(20, 4),(20, 37),(20, 30),(21, 14),(21, 5),(21, 2),(21, 4),(21, 32),(22, 48),(22, 30),(22, 34),
+(23, 25),(23, 26),(23, 11),(23,8),(23,36),(24, 25),(24, 36),(24, 30),(24, 11),(25, 28),
+(25, 27),(25, 36),(25, 30),(26, 30),(26, 36),(34, 10),(34, 36),(35, 36),(35, 8);
+
+INSERT INTO waiters (`name`, egn, phone, address, date_of_hiring, hourly_payment) VALUES 
+('Мария Петрова', '0243064568', '0888193275', 'бул. България 25', '2020-03-10', 8.20),
+('Димитър Георгиев', '0343206467', NULL, 'ул. Христо Ботев 12', '2019-08-05', 13.00),
+('София Димитрова', '9903148563', '0891849302', 'ул. Георги Бенковски 2', '2022-02-28', 7.00),
+('Николай Лазаров', '9810294577', '0892927321', NULL, '2021-06-10', 7.80),
+('Гергана Стоянова', '0145144567', NULL, 'бул. Цариградско шосе 55', '2020-01-01', 9.00),
+('Станислава Маринова', '9805134547', '0894820472', 'ул. Любен Каравелов 8', '2021-12-01', 8.50);
+INSERT INTO waiters (`name`, egn, phone, address, date_of_hiring, hourly_payment)
+VALUES ('Иван Иванов', '9503028563', '0888123456', 'ул. България 15, София', '2020-05-01', 10.50);
+
+INSERT INTO waiters (`name`, egn, phone, address, date_of_hiring, hourly_payment)
+VALUES ('Петър Петров', '9901267504', '0899654321', 'бул. Цар Борис III 25, Варна', '2019-01-15', 9.00);
+
+INSERT INTO waiters (`name`, egn, phone, address, date_of_hiring, hourly_payment)
+VALUES ('Мария Георгиева', '9812064567', NULL, 'ул. Гео Милев 18, Пловдив', '2021-09-01', 11.00);
+
+INSERT INTO tables (seats, waiter_id) VALUES
+(2, NULL),
+(2, NULL),
+(4, NULL),
+(8, 5),
+(4, NULL),
+(4, NULL),
+(6, NULL),
+(10, 8),
+(10, 2);
+
+INSERT INTO orders(date_time, table_id, waiter_id) VALUES
+('2021-09-01', 1, 2),
+('2021-09-04', 2, 7),
+('2021-09-06', 4, 6),
+('2021-09-09', 7, 5),
+('2021-09-11', 6, 9),
+('2021-09-13', 3, 3);
+
+INSERT INTO orders_items VALUES
+(1, 1, 6),(1, 4,1),(1, 5,1),(1, 13, 1),(1, 20, 1),(1, 27, 2),
+(2, 3, 2),(2, 2, 2),(2, 6, 2),(2, 5, 1),(2, 4, 1),(2, 12, 1),(2, 22, 1),(2, 17, 1),(2, 16, 1),(2, 29, 4),
+(3, 1, 10),(3, 7, 2),(3, 8, 2),(3, 14, 10),(3, 15, 10),(3, 23, 2),(3, 24, 2),(3, 36, 2),(3, 30, 2),
+(4, 1, 25),(4, 9, 5),(4, 11, 5),(4, 21, 4),(4, 18, 3),(4, 22, 3),(4, 26, 5),(4, 27, 8),(4, 28, 2),
+(5, 3, 6),(5, 2, 6),(5, 4, 3),(5, 7, 3),(5, 12, 2),(5, 13, 2),(5, 19, 2),(5, 26, 1),(5, 34, 1),
+(6, 1, 16),(6, 8, 3),(6, 9, 3),(6, 10, 2),(6, 18, 4),(6, 20, 2),(6, 17, 2),(6, 23, 3),(6, 33, 3),(6, 30, 3),(6, 28, 2);
+
+INSERT INTO waiters_payment(payment_date, hours_worked, waiter_id) VALUES
+('2022-01-10', 8, 1),
+('2022-01-12', 7, 1),
+('2022-01-14', 6, 1),
+('2022-01-16', 5, 1),
+('2022-01-23', 8, 1),
+('2022-02-14', 9, 1),
+('2022-02-17', 8, 1),
+('2022-02-19', 8, 1),
+('2022-02-25', 7, 1),
+('2022-01-10', 8, 2),
+('2022-01-12', 7, 2),
+('2022-01-14', 6, 2),
+('2022-01-16', 5, 2),
+('2022-01-23', 8, 2),
+('2022-02-14', 9, 2),
+('2022-02-17', 8, 2),
+('2022-02-19', 8, 2),
+('2022-02-25', 7, 2),
+('2022-01-10', 8, 3),
+('2022-01-12', 7, 3),
+('2022-01-14', 6, 3),
+('2022-01-16', 5, 3),
+('2022-01-23', 8, 3),
+('2022-02-14', 9, 3),
+('2022-02-17', 8, 3),
+('2022-02-19', 8, 3),
+('2022-02-25', 7, 3),
+('2022-01-10', 8, 4),
+('2022-01-12', 7, 4),
+('2022-01-14', 6, 4),
+('2022-01-16', 5, 4),
+('2022-01-23', 8, 4),
+('2022-02-14', 9, 4),
+('2022-02-17', 8, 4),
+('2022-02-19', 8, 4),
+('2022-02-25', 7, 4),
+('2022-01-10', 8, 5),
+('2022-01-12', 7, 5),
+('2022-01-14', 6, 5),
+('2022-01-16', 5, 5),
+('2022-01-23', 8, 5),
+('2022-02-14', 9, 5),
+('2022-02-17', 8, 5),
+('2022-02-19', 8, 5),
+('2022-02-25', 7, 5),
+('2022-01-10', 8, 6),
+('2022-01-12', 7, 6),
+('2022-01-14', 6, 6),
+('2022-01-16', 5, 6),
+('2022-01-23', 8, 6),
+('2022-02-14', 9, 6),
+('2022-02-17', 8, 6),
+('2022-02-19', 8, 6),
+('2022-02-25', 7, 6),
+('2022-01-10', 8, 7),
+('2022-01-12', 7, 7),
+('2022-01-14', 6, 7),
+('2022-01-16', 5, 7),
+('2022-01-23', 8, 7),
+('2022-02-14', 9, 7),
+('2022-02-17', 8, 7),
+('2022-02-19', 8, 7),
+('2022-02-25', 7, 7),
+('2022-01-10', 8, 8),
+('2022-01-12', 7, 8),
+('2022-01-14', 6, 8),
+('2022-01-16', 5, 8),
+('2022-01-23', 8, 8),
+('2022-02-14', 9, 8),
+('2022-02-17', 8, 8),
+('2022-02-19', 8, 8),
+('2022-02-25', 7, 8),
+('2022-01-10', 8, 9),
+('2022-01-12', 7, 9),
+('2022-01-14', 6, 9),
+('2022-01-16', 5, 9),
+('2022-01-23', 8, 9),
+('2022-02-14', 9, 9),
+('2022-02-17', 8, 9),
+('2022-02-19', 8, 9),
+('2022-02-25', 7, 9);
+
+INSERT INTO reservations(reservation_dateTime, client_first_name, client_second_name, client_phone, number_of_people, event_type_id)
+VALUES ('2023-04-06 12:00:00', 'Иван', 'Иванов', '0888643255', 2, 2),
+('2023-04-06 12:00:00', 'Петър', 'Петров', '0897320121', 4, 2),
+('2023-04-06 18:00:00', 'Мария', 'Иванова', '0876923757', 8, 3),
+('2023-04-06 18:00:00', 'Георги', 'Георгиев', '0896128462', 15, 3),
+('2023-04-06 20:00:00', 'Анна', 'Петрова', '0876923786', 20, 4),
+('2023-04-06 16:00:00', 'Васил', 'Петров', '0876823532', 25, 3);
+
+INSERT INTO `events`
+VALUES  (NULL, "Закуска", 2),
+		(NULL, "Обяд", 3),
+		(NULL, "Вечеря", 3),
+		(NULL, "Рожден ден", 5),
+		(NULL, "Бал", 6),
+		(NULL, "Юбилей", 7),
+		(NULL, "Сватба", 8),
+		(NULL, "Друго събитие", 4);
+
+2. SELECT * FROM products
+WHERE origin = 'Европа';
+
+3. SELECT origin AS ProductOrigin,
+COUNT(*) AS NumOfProductsFromThatOrigin
+FROM products
+GROUP BY origin;
+
+4. SELECT items.name AS Item,
+items.grammage AS GrammageOfItem,
+items.prize AS PrizeOfItem,
+items_type.name AS TypeOfItem
+FROM items JOIN items_type
+ON items.item_type_id = items_type.id;
+
+5. SELECT `tables`.id AS TableNumber,
+`tables`.seats AS TableSeats,
+`tables`.is_fancy AS FancyTable,
+waiters.name AS WaiterName
+FROM `tables` LEFT OUTER JOIN waiters
+ON `tables`.waiter_id = waiters.id;
+
+6. SELECT orders.id AS OrderNumber,
+items.`name` AS ItemInTheOrder
+FROM orders JOIN items
+ON orders.id in (
+	SELECT order_id
+    FROM orders_items
+    WHERE item_id = items.id
+);
+
+7. SELECT waiter_id AS WaiterId, waiters.`name` AS WaiterName,`month` AS Month, SUM(daily_payment) AS MontlyEarnings
+FROM waiters_payment JOIN waiters
+ON waiters_payment.waiter_id = waiters.id
+GROUP BY waiter_id, `month`
+ORDER BY MontlyEarnings DESC;
+
+8. DROP TRIGGER IF EXISTS before_daily_payment_insertion;
+delimiter |
+CREATE TRIGGER before_daily_payment_insertion BEFORE INSERT ON waiters_payment
+FOR EACH ROW
+BEGIN
+
+SET NEW.daily_payment = (SELECT hourly_payment FROM waiters 
+WHERE id = NEW.waiter_id) * NEW.hours_worked + NEW.tips;
+
+END;
+|
+delimiter ;
+
+9. DROP PROCEDURE IF EXISTS waiter_payment;
+delimiter |
+CREATE PROCEDURE waiter_payment(IN EGN CHAR(10), IN payMonth TINYINT, IN payYear INT)
+BEGIN
+	DECLARE finished INT;
+	DECLARE Month TINYINT;
+	DECLARE Year INT;
+	DECLARE Day TINYINT;
+	DECLARE DailyPayment DOUBLE;
+	DECLARE WaiterName VARCHAR(255);
+
+	DECLARE waiter_payment_cursor CURSOR FOR 
+		SELECT waiters.`name`, waiters_payment.`month`,waiters_payment.`day`,waiters_payment.`year`,
+		waiters_payment.daily_payment
+		FROM waiters_payment JOIN waiters
+		ON waiters_payment.waiter_id = waiters.id
+		WHERE waiters.egn = EGN
+		AND waiters_payment.MONTH = payMonth
+		AND waiters_payment.YEAR = payYear;
+
+	DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+
+	CREATE TEMPORARY TABLE waiter_payment_temp(
+		waiterName VARCHAR(255),
+		paymentMonth TINYINT,
+		paymentDay TINYINT,
+		paymentYear YEAR,
+		dailyPayment DOUBLE
+	)Engine = MEMORY;
+
+	SET finished = 0;
+	OPEN waiter_payment_cursor;
+	waiter_loop: WHILE (finished = 0)
+		DO
+			FETCH waiter_payment_cursor INTO WaiterName, Month, Day, Year,
+									  DailyPayment;
+			IF (finished = 1)
+			THEN
+				LEAVE waiter_loop;
+			ELSE
+				INSERT INTO waiter_payment_temp()
+				SELECT WaiterName, Month, Day, Year, DailyPayment;
+			END IF;
+
+	END WHILE;
+		CLOSE waiter_payment_cursor;
+		SELECT * FROM waiter_payment_temp;
+		DROP TABLE waiter_payment_temp;
+END;
+|
+delimiter ;
+
+CALL waiter_payment('9901267504', 1, 2022);
+
+
+
+delimiter |
+DROP TRIGGER IF EXISTS orders_total;
+CREATE TRIGGER orders_total AFTER INSERT ON orders_items
+FOR EACH ROW
+BEGIN
+	DECLARE item_prize DOUBLE;
+    
+    SELECT prize INTO item_prize
+    FROM items
+    WHERE id = NEW.item_id;
+
+	UPDATE orders
+    SET total = total + item_prize * NEW.quantity_of_item
+    WHERE id = NEW.order_id;
+END;
+|
+delimiter ;

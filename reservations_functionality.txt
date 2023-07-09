@@ -1,0 +1,318 @@
+delimiter |
+DROP TRIGGER IF EXISTS insert_into_reservations_tables;
+CREATE TRIGGER insert_into_reservations_tables AFTER INSERT ON reservations
+FOR EACH ROW
+BEGIN
+		CALL update_reser_tab(NEW.id, NEW.number_of_people);
+END;
+|
+delimiter ;
+
+delimiter |
+DROP PROCEDURE IF EXISTS events_sum;
+CREATE PROCEDURE events_sum(OUT sum_of_seats INT, IN res_id INT)
+BEGIN
+	INSERT INTO tempTables
+		SELECT id, seats
+		FROM `tables`
+		WHERE id in (
+			SELECT table_id
+			FROM reservation_table
+			WHERE reservation_id = res_id
+		)
+        AND id NOT IN (
+			SELECT tempTabBefEvenetId
+            FROM tempTabBefEvents
+        );
+							
+	SELECT SUM(table_seats) INTO sum_of_seats
+	FROM tempTables;
+END;
+|
+delimiter ;
+
+delimiter |
+DROP TRIGGER IF EXISTS constraint_for_reservation;
+CREATE TRIGGER constraint_for_reservation BEFORE INSERT ON reservations
+FOR EACH ROW
+BEGIN
+	DECLARE bef_event_seats TINYINT;
+    DECLARE res_id INT;
+    DECLARE diff_hours TINYINT;
+    DECLARE bef_event_type_id INT;
+	DECLARE bef_event_hours TINYINT;
+    DECLARE count_of_rows INT;
+    DECLARE iterator INT;
+    DECLARE date_time_res_closing DATETIME;
+    DECLARE event_seats TINYINT;
+    DECLARE flag TINYINT;
+	DECLARE new_event_hours TINYINT;
+    DECLARE not_avail_seats INT;
+    
+    SELECT duration_hours INTO new_event_hours
+    FROM `events`
+    WHERE id = NEW.event_type_id;
+
+	SET @result = 0;
+    SET @currSeats = NEW.number_of_people;
+    SET @bef_seats_sum = 0;
+    SET flag = 1;
+    SET not_avail_seats = 0;
+    SET date_time_res_closing = STR_TO_DATE(CONCAT(DATE(DATE_ADD(NEW.reservation_dateTime, INTERVAL 1 DAY)), ' ', '02:00:00'), '%Y-%m-%d %H:%i:%s');
+    
+	IF (DATE_ADD(NEW.reservation_dateTime, INTERVAL new_event_hours HOUR) > date_time_res_closing)                                                
+    THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "I'm sorry, but we will be closed by the time your event finishes!";
+    END IF;
+    
+    CALL available_tables(NEW.reservation_dateTime, NEW.id, @currSeats, @result);
+    
+    CREATE TEMPORARY TABLE tempRes(
+		id INT,
+        difference_hours INT,
+        bef_e_type_id INT
+    )ENGINE = MEMORY;
+    
+    CREATE TEMPORARY TABLE tempTabBefEvents(
+		tempTabBefEvenetId INT,
+        tempTabSeats TINYINT
+    )ENGINE = MEMORY;
+    
+	IF (@result = 0)
+	THEN
+		INSERT INTO tempRes
+			SELECT id, TIMESTAMPDIFF(HOUR, reservation_dateTime, NEW.reservation_dateTime), event_type_id
+			FROM reservations
+			WHERE DATE(reservation_dateTime) = DATE(NEW.reservation_dateTime)
+			ORDER BY CASE WHEN reservation_dateTime <= NEW.reservation_dateTime THEN 0 ELSE 1 END ASC, 
+			ABS(TIMESTAMPDIFF(HOUR, reservation_dateTime, NEW.reservation_dateTime)) ASC, 
+			reservation_dateTime ASC;
+
+        
+        SELECT COUNT(id) INTO count_of_rows
+        FROM tempRes;
+        
+        SET iterator = 1;
+       res_loop: WHILE (iterator >= 1 AND iterator <= count_of_rows)
+        DO
+			SELECT id, difference_hours, bef_e_type_id INTO res_id , diff_hours, bef_event_type_id
+			FROM tempRes
+			LIMIT 1;
+            
+			DELETE FROM tempRes
+			WHERE id = res_id;
+        
+			SELECT duration_hours INTO bef_event_hours
+			FROM `events`
+			WHERE id = bef_event_type_id;
+				
+			IF (diff_hours > 0 AND diff_hours >= bef_event_hours)
+			THEN
+				IF (flag = 1) 
+                THEN
+					CALL events_sum(@bef_seats_sum, res_id);
+					IF (@currSeats + @bef_seats_sum >= NEW.number_of_people)
+					THEN
+						SET flag = 0;
+					END IF;
+                END IF;
+			ELSE IF (diff_hours <= 0 AND ABS(diff_hours) >= new_event_hours)
+			THEN
+				IF (flag = 1)
+                THEN
+					CALL events_sum(@bef_seats_sum, res_id);
+					IF (@currSeats + @bef_seats_sum >= NEW.number_of_people)
+					THEN
+						LEAVE res_loop;
+					END IF; 
+				END IF; 
+			ELSE 
+				SELECT number_of_people INTO event_seats
+				FROM reservations
+				WHERE id = res_id;
+                
+				SET not_avail_seats = not_avail_seats + event_seats;
+                    
+				IF (not_avail_seats + NEW.number_of_people > (SELECT SUM(seats) FROM `tables`))
+				THEN
+						DROP TEMPORARY TABLE IF EXISTS tempRes;
+						DROP TEMPORARY TABLE IF EXISTS tempTables;
+                        DROP TEMPORARY TABLE IF EXISTS tempTabBefEvents;
+						SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "We don't have that many available seats for your event at that hour, they're
+																												alredy reserved for another event!";
+                END IF;
+				INSERT INTO tempTabBefEvents (tempTabBefEvenetId)
+					SELECT table_id
+					FROM reservation_table
+					WHERE reservation_id = res_id;
+			END IF; 
+            END IF; 
+		SET iterator = iterator + 1;
+		END WHILE;
+		IF ((iterator - 1 = count_of_rows AND flag = 1)) 
+		THEN
+			DROP TEMPORARY TABLE IF EXISTS tempRes;
+			DROP TEMPORARY TABLE IF EXISTS tempTables;
+            DROP TEMPORARY TABLE IF EXISTS tempTabBefEvents;
+			SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "We don't have that many available seats for your event at that hour";
+		END IF; 
+	END IF;
+	DROP TEMPORARY TABLE IF EXISTS tempRes;
+END;	
+|
+delimiter ;
+
+
+delimiter |
+DROP PROCEDURE IF EXISTS available_tables;
+CREATE PROCEDURE available_tables(IN res_dateTime datetime, IN res_id INT,
+														INOUT res_seats TINYINT, OUT res TINYINT)
+BEGIN
+	DECLARE finished INT;
+	DECLARE currTableId INT;
+    DECLARE currAvaSeats1 TINYINT;
+    
+    DECLARE tableCursor CURSOR FOR 
+    SELECT id
+    FROM `tables`
+    ORDER BY seats;
+    
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+    
+    SET currAvaSeats1 = 0;
+    SET finished = 0;
+    
+    CREATE TEMPORARY TABLE tempTables(
+		table_id INT,
+        table_seats TINYINT
+    )ENGINE = MEMORY;
+    
+    OPEN tableCursor;
+	table_loop: WHILE(finished = 0)
+	DO
+		FETCH tableCursor INTO currTableId;
+			IF(finished = 1)
+            THEN
+				LEAVE table_loop;
+			END IF;
+            
+            INSERT INTO tempTables
+				SELECT id, seats
+				FROM `tables`
+				WHERE id = currTableId
+				AND id NOT IN (
+					SELECT table_id
+					FROM reservation_table
+					WHERE reservation_id IN (
+						SELECT id
+						FROM reservations
+						WHERE DATE(reservation_dateTime) = DATE(res_dateTime)
+					)
+				);
+                
+			SELECT SUM(table_seats) INTO currAvaSeats1
+            FROM tempTables;
+            
+		END WHILE;
+		CLOSE tableCursor;
+        
+        SET currAvaSeats1 = IFNULL(currAvaSeats1, 0);
+        IF (currAvaSeats1 < res_seats)
+        THEN
+			DELETE FROM tempTables;
+			SET res = 0;
+            SET res_seats = currAvaSeats1;
+		ELSE
+			SET res = 1;
+		END IF;
+END;
+|
+delimiter ;
+
+delimiter |
+DROP PROCEDURE IF EXISTS update_reser_tab;
+CREATE PROCEDURE update_reser_tab(IN new_res_id INT, IN res_seats TINYINT)
+BEGIN
+	DECLARE tempTabId INT;
+    DECLARE tempTabSeats TINYINT;
+    DECLARE currSeats TINYINT;
+    DECLARE table_id_min_seats INT;
+    DECLARE table_min_seats TINYINT;
+    DECLARE tabCursor CURSOR FOR
+		SELECT table_id, table_seats FROM tempTables
+        ORDER BY table_seats DESC;
+    
+    SET currSeats = 0;
+    
+	OPEN tabCursor;
+	tab_loop: WHILE (TRUE)
+	DO
+		FETCH tabCursor INTO tempTabId, tempTabSeats;
+            IF (currSeats + tempTabSeats >= res_seats)
+			THEN
+				SET table_id_min_seats = tempTabId;
+                
+                IF (currSeats + tempTabSeats - res_seats != 1 AND currSeats + tempTabSeats != res_seats)
+                THEN
+					SELECT table_id, table_seats INTO table_id_min_seats, table_min_seats
+					FROM tempTables
+					WHERE table_seats + currSeats >= res_seats
+					ORDER BY table_seats ASC
+					LIMIT 1;
+                    IF (res_seats < 5 AND currSeats + table_min_seats > 2 * res_seats)
+					THEN
+						DROP TEMPORARY TABLE IF EXISTS tempRes;
+						DROP TEMPORARY TABLE IF EXISTS tempTables;
+                        DROP TEMPORARY TABLE IF EXISTS tempTabBefEvents;
+						SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "I'm sorry, but the available tables we currently have are more than twice the
+																											size of what you are trying to reserve.";
+					END IF;
+                END IF;
+                
+                INSERT INTO reservation_table
+				VALUES (new_res_id, table_id_min_seats);
+                LEAVE tab_loop;
+			ELSE
+				INSERT INTO reservation_table
+				VALUES (new_res_id, tempTabId);
+			
+			END IF;
+            SET currSeats = currSeats + tempTabSeats;
+	END WHILE;
+	CLOSE tabCursor;
+    DROP TEMPORARY TABLE IF EXISTS tempTables;
+    DROP TEMPORARY TABLE IF EXISTS tempTabBefEvents;
+END;
+|
+delimiter ;
+
+delimiter |
+DROP PROCEDURE IF EXISTS delete_reservation;
+CREATE PROCEDURE delete_reservation(IN res_id INT)
+BEGIN
+	DELETE FROM reservations
+    WHERE id = res_id;
+END;
+|
+delimiter ;	
+
+-- delimiter |
+-- DROP PROCEDURE IF EXISTS drop_temp_tables;
+-- CREATE PROCEDURE drop_temp_tables(IN tableNum INT)
+-- BEGIN
+-- 	IF (tableNum = 1)
+--     THEN
+-- 		DROP TEMPORARY TABLE IF EXISTS tempRes;
+-- 	ELSE IF (tableNum = 2)
+--     THEN
+--     	DROP TEMPORARY TABLE IF EXISTS tempTables;
+-- 		DROP TEMPORARY TABLE IF EXISTS tempTabBefEvents;
+-- 	ELSE
+-- 		DROP TEMPORARY TABLE IF EXISTS tempRes;
+-- 		DROP TEMPORARY TABLE IF EXISTS tempTables;
+-- 		DROP TEMPORARY TABLE IF EXISTS tempTabBefEvents;
+-- 	END IF;
+--     END IF;
+-- END;
+-- |
+-- delimiter ;	
